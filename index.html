@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -61,7 +62,6 @@
         .sizes { display: flex; gap: 1vh; }
         .size-btn { background: #ecf0f1; border: none; border-radius: 1vh; width: 6vh; height: 6vh; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .size-btn.active { background: var(--udea-gold); } .size-dot { background: #2c3e50; border-radius: 50%; }
-        .shapes-grid { display: grid; grid-template-columns: repeat(3, 1fr), gap: 1vh; width: 100%; }
         .shapes-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1vh; width: 100%; }
         .shape-btn { background: #34495e; border: none; border-radius: 1vh; width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 2.5vh; color: white; }
         .shape-btn.active { background: var(--udea-gold); color: #000; }
@@ -77,6 +77,7 @@
         #recordBtn { background: #e74c3c; } #recordBtn.recording { animation: rec-pulse 1.5s infinite; }
         @keyframes rec-pulse { 0% { background: #c0392b; } 50% { background: #e74c3c; } 100% { background: #c0392b; } }
         #aulaBabelBtn { background: #3498db; } #aulaBabelBtn.active { background: #2980b9; box-shadow: 0 0 10px white; }
+        #autoLatexBtn { background: #2c3e50; } #autoLatexBtn.active { background: #34495e; box-shadow: 0 0 10px white; }
         #uploadBtn { background: #16a085; } 
         
         .history-btns { display: flex; flex-direction: row; width: 100%; gap: 1vh; }
@@ -148,6 +149,7 @@
                 </div>
                 <div class="tool-group">
                     <div class="tool-label">Taller de Lenguas</div>
+                    <button class="action-btn" id="autoLatexBtn">Escritura LaTeX Rápida</button>
                     <button class="action-btn" id="aulaBabelBtn">Aula Babel (Lenguas)</button>
                 </div>
                 <div class="tool-group">
@@ -204,8 +206,9 @@
         const canvas = document.getElementById('pizarra');
         const ctx = canvas.getContext('2d');
         let currentColor = '#2c3e50', currentSize = 3, isEraser = false, isDrawing = false;
-        let currentShape = null, isLangMode = false;
+        let currentShape = null, isLangMode = false, isAutoLatexMode = false;
         let startX = 0, startY = 0, savedImage = null, penIsDown = false;
+        let strokeX = [], strokeY = []; // Para rastrear el trazo del LaTeX automático
 
         function updateDeviceStatus(type) {
             const el = document.getElementById('deviceStatus');
@@ -229,10 +232,11 @@
         document.getElementById('toggleArrow').addEventListener('pointerdown', () => togglePersiana());
 
         function clearToolStates() { 
-            isEraser=false; currentShape=null; isLangMode=false;
+            isEraser=false; currentShape=null; isLangMode=false; isAutoLatexMode=false;
             document.getElementById('eraserBtn').classList.remove('active'); 
             document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active')); 
             document.getElementById('aulaBabelBtn').classList.remove('active'); 
+            document.getElementById('autoLatexBtn').classList.remove('active'); 
         }
         document.querySelectorAll('.color-btn').forEach(b => b.addEventListener('pointerup', () => { document.querySelectorAll('.color-btn').forEach(x => x.classList.remove('active')); b.classList.add('active'); currentColor = b.dataset.color; clearToolStates(); }));
         document.querySelectorAll('.size-btn').forEach(b => b.addEventListener('pointerup', () => { document.querySelectorAll('.size-btn').forEach(x => x.classList.remove('active')); b.classList.add('active'); currentSize = parseInt(b.dataset.size); }));
@@ -243,6 +247,7 @@
         document.getElementById('eyeCareBtn').addEventListener('pointerup', () => canvas.classList.toggle('eye-care-active'));
         document.getElementById('fullscreenBtn').addEventListener('pointerup', () => { if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); });
         document.getElementById('aulaBabelBtn').addEventListener('pointerup', e => { clearToolStates(); isLangMode = !isLangMode; e.target.classList.toggle('active', isLangMode); });
+        document.getElementById('autoLatexBtn').addEventListener('pointerup', e => { clearToolStates(); isAutoLatexMode = !isAutoLatexMode; e.target.classList.toggle('active', isAutoLatexMode); });
 
         document.getElementById('uploadBtn').addEventListener('pointerup', () => document.getElementById('fileInput').click());
         document.getElementById('fileInput').addEventListener('change', e => {
@@ -292,16 +297,32 @@
             if (e.pointerType === 'touch' && penIsDown) { e.preventDefault(); return; }
             e.preventDefault(); canvas.setPointerCapture(e.pointerId); isDrawing = true;
             const p = getPos(e); startX = p.x; startY = p.y;
-            if(currentShape || isLangMode) { savedImage = ctx.getImageData(0,0,canvas.width,canvas.height); }
-            else { ctx.beginPath(); ctx.moveTo(startX, startY); }
+            
+            if(currentShape || isLangMode || isAutoLatexMode) { 
+                savedImage = ctx.getImageData(0,0,canvas.width,canvas.height); 
+            }
+            if (isAutoLatexMode) {
+                strokeX = []; strokeY = [];
+                strokeX.push(p.x); strokeY.push(p.y);
+            }
+            
+            ctx.beginPath(); ctx.moveTo(startX, startY);
         });
+        
         canvas.addEventListener('pointermove', e => {
             if (e.pointerType === 'touch' && penIsDown) return;
             if(!isDrawing) return; e.preventDefault(); const p = getPos(e);
+            
             if(currentShape && savedImage) { ctx.putImageData(savedImage, 0, 0); drawShape(currentShape, startX, startY, p.x, p.y); }
             else if (isLangMode && savedImage) { ctx.putImageData(savedImage, 0, 0); ctx.strokeStyle = '#3498db'; ctx.lineWidth = 2; ctx.setLineDash([10,10]); ctx.strokeRect(startX, startY, p.x-startX, p.y-startY); ctx.setLineDash([]); }
+            else if (isAutoLatexMode) { 
+                strokeX.push(p.x); strokeY.push(p.y);
+                ctx.strokeStyle = currentColor; ctx.lineWidth = currentSize; ctx.globalCompositeOperation='source-over';
+                ctx.lineTo(p.x, p.y); ctx.stroke(); 
+            }
             else { if(isEraser){ ctx.globalCompositeOperation='destination-out'; ctx.lineWidth=currentSize*4; } else { ctx.globalCompositeOperation='source-over'; ctx.strokeStyle=currentColor; ctx.lineWidth=currentSize; } ctx.lineTo(p.x, p.y); ctx.stroke(); }
         });
+        
         function stopDraw(e) {
             if (e.pointerType === 'pen') penIsDown = false;
             if (e.pointerType === 'touch' && penIsDown) return;
@@ -312,44 +333,55 @@
                 if (isLangMode && savedImage) {
                     let x = Math.min(startX, p.x); let y = Math.min(startY, p.y); 
                     let w = Math.abs(p.x - startX); let h = Math.abs(p.y - startY);
-                    
                     if (w > 10 && h > 10) { 
-                        // Pre-procesamiento de imagen
                         let tempCanvas = document.createElement('canvas'); 
-                        tempCanvas.width = w * 3; 
-                        tempCanvas.height = h * 3; 
+                        tempCanvas.width = w * 3; tempCanvas.height = h * 3; 
                         let tempCtx = tempCanvas.getContext('2d'); 
-                        tempCtx.imageSmoothingEnabled = false;
-                        tempCtx.fillStyle = "#FFFFFF"; 
+                        tempCtx.imageSmoothingEnabled = false; tempCtx.fillStyle = "#FFFFFF"; 
                         tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
                         tempCtx.drawImage(canvas, x, y, w, h, 0, 0, tempCanvas.width, tempCanvas.height); 
-                        
                         let imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                         let pixels = imgData.data;
                         for (let i = 0; i < pixels.length; i += 4) {
                             let val = pixels[i] * 0.299 + pixels[i+1] * 0.587 + pixels[i+2] * 0.114;
-                            val = val > 140 ? 255 : 0; 
-                            pixels[i] = val; pixels[i+1] = val; pixels[i+2] = val;
+                            val = val > 140 ? 255 : 0; pixels[i] = val; pixels[i+1] = val; pixels[i+2] = val;
                         }
                         tempCtx.putImageData(imgData, 0, 0);
-                        
                         let imgDataUrl = tempCanvas.toDataURL('image/png');
                     
                         ctx.putImageData(savedImage, 0, 0); 
-                        
-                        // HALO AZUL
-                        ctx.save();
-                        ctx.globalCompositeOperation = 'source-over';
-                        ctx.fillStyle = 'rgba(52, 152, 219, 0.3)'; 
-                        ctx.fillRect(x - 10, y - 10, w + 20, h + 20);
+                        ctx.save(); ctx.globalCompositeOperation = 'source-over';
+                        ctx.fillStyle = 'rgba(52, 152, 219, 0.3)'; ctx.fillRect(x - 10, y - 10, w + 20, h + 20);
                         ctx.restore();
-
                         processLanguage(imgDataUrl, x, y, w, h); 
+                    } else { ctx.putImageData(savedImage, 0, 0); }
+                    isLangMode = false; document.getElementById('aulaBabelBtn').classList.remove('active');
+                }
+                else if (isAutoLatexMode && savedImage && strokeX.length > 1) {
+                    // Calcular caja del trzo
+                    let minX = Math.min(...strokeX), maxX = Math.max(...strokeX);
+                    let minY = Math.min(...strokeY), maxY = Math.max(...strokeY);
+                    let w = maxX - minX, h = maxY - minY;
+                    
+                    if (w > 10 && h > 10) {
+                        // Capturar el trazo dibujado
+                        let tempCanvas = document.createElement('canvas'); 
+                        tempCanvas.width = w + 40; tempCanvas.height = h + 40; 
+                        let tempCtx = tempCanvas.getContext('2d'); 
+                        tempCtx.imageSmoothingEnabled = false; tempCtx.fillStyle = "#FFFFFF"; 
+                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                        tempCtx.drawImage(canvas, minX-20, minY-20, w+40, h+40, 0, 0, w+40, h+40); 
+                        
+                        // Borrar el trzo manuscrito original
+                        ctx.putImageData(savedImage, 0, 0);
+                        
+                        // Convertir a LaTeX inmediatamente
+                        autoLatexConvert(tempCanvas.toDataURL('image/png'), minX, minY, w, h);
                     } else {
                         ctx.putImageData(savedImage, 0, 0);
                     }
-                    isLangMode = false; 
-                    document.getElementById('aulaBabelBtn').classList.remove('active');
+                    isAutoLatexMode = false; 
+                    document.getElementById('autoLatexBtn').classList.remove('active');
                 }
                 else { saveState(); }
                 ctx.closePath(); ctx.globalCompositeOperation='source-over';
@@ -361,215 +393,137 @@
         async function drawLatexOnCanvas(latex, cx, cy, maxWidth, color) {
             try {
                 if (!window.MathJax || !MathJax.typesetPromise) throw new Error("MathJax no cargado");
-                
-                // Renderizar a SVG
-                const result = await MathJax.typesetPromise({
-                    math: latex,
-                    format: "TeX",
-                    svg: true,
-                    svgFont: true
-                });
-                
+                const result = await MathJax.typesetPromise({ math: latex, format: "TeX", svg: true, svgFont: true });
                 const svgString = result.svg;
                 const blob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
                 const url = URL.createObjectURL(blob);
-                
                 const img = new Image();
-                await new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = reject;
-                    img.src = url;
-                });
-                
-                // Calcular tamaño
+                await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
                 let scale = maxWidth / img.width;
-                if (img.width * scale > maxWidth) scale = maxWidth / img.width;
-                if (scale > 1.5) scale = 1.5; // Limitar crecimiento excesivo
-                
-                let drawW = img.width * scale;
-                let drawH = img.height * scale;
-                
-                // Tinte de color (negro por defecto, rojo si es corrección)
-                // Para SVG simple, podemos dibujar y luego sobrescribir si es necesario, 
-                // pero MathJax genera negro por defecto. Lo dejaremos en negro para estética.
-                
-                ctx.drawImage(img, cx - drawW / 2, cy - drawH, drawW, drawH);
+                if (scale > 1.5) scale = 1.5; 
+                let drawW = img.width * scale, drawH = img.height * scale;
+                ctx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
                 URL.revokeObjectURL(url);
             } catch(e) {
-                // Fallback a texto plano
-                ctx.font = "bold 32px Segoe UI";
-                ctx.textAlign = "center";
-                ctx.fillStyle = color || "#000";
+                ctx.font = "bold 32px Segoe UI"; ctx.textAlign = "center"; ctx.fillStyle = color || "#000";
                 ctx.fillText(latex.replace(/\\text\{/g, '').replace(/\}/g, ''), cx, cy);
             }
         }
 
-        // AULA BABEL: OCR Local + IA de Texto + LaTeX Render
+        // NUEVO: Conversión instantánea a LaTeX
+        async function autoLatexConvert(imgDataUrl, x, y, w, h) {
+            const notif = document.getElementById('arNotification');
+            notif.innerText = "✍️ Convirtiendo a LaTeX..."; notif.style.display = 'block';
+            try {
+                const worker = await Tesseract.createWorker(['eng', 'spa', 'por', 'fra'], 1, {
+                    logger: m => { if (m.status === 'recognizing text') notif.innerText = `🔍 Escaneando... ${Math.round(m.progress * 100)}%`; }
+                });
+                const ret = await worker.recognize(imgDataUrl);
+                await worker.terminate();
+                let extractedText = ret.data.text.trim();
+                if (!extractedText) throw new Error("No text");
+
+                notif.innerText = "📐 Formateando LaTeX...";
+                const prompt = encodeURIComponent(`Convierte este texto a formato LaTeX. Si es texto normal, usa \\text{...}. Si es matemática, usa notación LaTeX. Responde SOLO el código LaTeX, sin explicaciones. Texto: "${extractedText}"`);
+                const r = await fetch(`https://text.pollinations.ai/${prompt}`);
+                let latex = await r.text();
+                latex = latex.replace(/```latex/g, '').replace(/```/g, '').trim();
+                if (!latex.startsWith('\\')) latex = `\\text{${latex}}`;
+
+                await drawLatexOnCanvas(latex, x + w/2, y + h/2, w + 100, currentColor);
+                saveState(); // Guardar estado con el LaTeX dibujado
+                notif.innerText = "✅ Texto convertido a LaTeX. Usa Aula Babel para traducir.";
+                setTimeout(() => { notif.style.display = 'none'; }, 3000);
+            } catch(e) {
+                notif.innerText = "❌ No se pudo convertir. Intenta escribir más claro.";
+                setTimeout(() => { notif.style.display = 'none'; }, 4000);
+            }
+        }
+
+        // AULA BABEL (Traducción y Pronunciación)
         async function processLanguage(processedImageUrl, x, y, w, h) {
             const notif = document.getElementById('arNotification');
-            notif.innerText = "🔍 Escaneando texto localmente...";
-            notif.style.display = 'block';
-            
-            let extractedText = "";
-            let lang = "Desconocido";
-            let translation = null;
-            let latex = "";
-            let translationLatex = "";
+            notif.innerText = "🌐 Aula Babel: Escaneando..."; notif.style.display = 'block';
+            let extractedText = "", lang = "Desconocido", translation = null, latex = "", translationLatex = "";
 
             try {
-                // 1. OCR Local
                 const worker = await Tesseract.createWorker(['eng', 'spa', 'por', 'fra'], 1, {
                     logger: m => { if (m.status === 'recognizing text') notif.innerText = `🔍 Escaneando... ${Math.round(m.progress * 100)}%`; }
                 });
                 const ret = await worker.recognize(processedImageUrl);
                 await worker.terminate();
-                
                 extractedText = ret.data.text.trim();
-                if (!extractedText || extractedText.length < 1) throw new Error("Texto no detectado");
+                if (!extractedText) throw new Error("Texto no detectado");
 
-                notif.innerText = "🌐 Traduciendo y formateando LaTeX...";
-                
-                // 2. IA de Texto (Corrección, Traducción y LaTeX)
-                const prompt = encodeURIComponent(`Texto escaneado a mano: "${extractedText}". Identifica el idioma (Español, Inglés, Portugués, Francés). Corrige la ortografía. Si no es Español, tradúcelo. Convierte el texto corregido y la traducción a formato LaTeX (usa \\text{...} para texto normal). Responde SOLO en JSON: {"text": "texto_plano_corregido", "lang": "Idioma", "translation": "traduccion_plana_o_null", "latex": "\\text{texto_latex}", "translation_latex": "\\text{traduccion_latex_o_null}"}`);
-                
+                notif.innerText = "🌐 Traduciendo y formateando...";
+                const prompt = encodeURIComponent(`Texto escaneado: "${extractedText}". Identifica el idioma (Español, Inglés, Portugués, Francés). Corrige ortografía. Si no es Español, tradúcelo. Convierte ambos a LaTeX (\\text{}). Responde SOLO JSON: {"text":"...", "lang":"...", "translation":"...", "latex":"...", "translation_latex":"..."}`);
                 const r = await fetch(`https://text.pollinations.ai/${prompt}`);
                 let textResp = await r.text();
-                
                 try {
                     textResp = textResp.replace(/```json/g, '').replace(/```/g, '').trim();
                     let jsonMatch = textResp.match(/\{.*\}/s);
                     if (jsonMatch) {
                         let parsed = JSON.parse(jsonMatch[0]);
-                        extractedText = parsed.text || extractedText;
-                        lang = parsed.lang || "Desconocido";
-                        translation = parsed.translation;
-                        latex = parsed.latex || `\\text{${extractedText}}`;
+                        extractedText = parsed.text || extractedText; lang = parsed.lang || "Desconocido";
+                        translation = parsed.translation; latex = parsed.latex || `\\text{${extractedText}}`;
                         translationLatex = parsed.translation_latex;
-                    } else {
-                        latex = `\\text{${textResp}}`;
-                    }
-                } catch (e) {
-                    latex = `\\text{${textResp}}`;
-                }
-
+                    } else { latex = `\\text{${textResp}}`; }
+                } catch (e) { latex = `\\text{${textResp}}`; }
             } catch (e) {
-                notif.innerText = "❌ No se pudo leer. Intenta escribir más grande y oscuro.";
-                setTimeout(() => { notif.style.display = 'none'; }, 5000);
-                return;
+                notif.innerText = "❌ No se pudo leer."; setTimeout(() => { notif.style.display = 'none'; }, 5000); return;
             }
 
-            // ÉXITO: Dibujar LaTeX y Hablar
             let speechLang = 'es-ES';
             if (lang.toLowerCase().includes('ingl')) speechLang = 'en-US';
             else if (lang.toLowerCase().includes('portug')) speechLang = 'pt-BR';
             else if (lang.toLowerCase().includes('franc')) speechLang = 'fr-FR';
 
-            // Dibujar con MathJax (Texto corregido arriba)
             await drawLatexOnCanvas(latex, x + w/2, y - 10, w);
-            
-            // Dibujar traducción abajo si existe
             if (translation && translation !== "null" && translation !== null && translationLatex) {
                 await drawLatexOnCanvas(translationLatex, x + w/2, y + h + 40, w);
             }
 
             notif.innerText = `🔊 Aula Babel: ${extractedText} (${lang})`;
-            
-            // Pronunciación blindada
             window.speechSynthesis.cancel(); 
             let voices = window.speechSynthesis.getVoices();
             let utterance = new SpeechSynthesisUtterance(extractedText);
-            utterance.lang = speechLang;
-            utterance.rate = 0.9;
-            
+            utterance.lang = speechLang; utterance.rate = 0.9;
             let selectedVoice = voices.find(v => v.lang === speechLang);
             if (selectedVoice) utterance.voice = selectedVoice;
-            
             window.speechSynthesis.speak(utterance);
-
             setTimeout(() => { notif.style.display = 'none'; }, 4000);
         }
 
         // Asistente IA Conversacional (Anti-Eco)
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let aiRecognition = null;
-        let isAISpeaking = false;
-
+        let aiRecognition = null, isAISpeaking = false;
         if (SR) {
-            aiRecognition = new SR();
-            aiRecognition.lang = 'es-ES'; 
-            aiRecognition.continuous = false;
-            aiRecognition.interimResults = false;
-
+            aiRecognition = new SR(); aiRecognition.lang = 'es-ES'; aiRecognition.continuous = false; aiRecognition.interimResults = false;
             const aiMic = document.getElementById('aiMic');
             aiMic.addEventListener('pointerup', () => {
-                window.speechSynthesis.cancel();
-                isAISpeaking = false;
-
-                if (aiMic.classList.contains('listening')) {
-                    aiRecognition.stop();
-                    return;
-                }
-                
-                try {
-                    aiRecognition.start();
-                    aiMic.classList.add('listening');
-                    aiMic.innerText = "⏹️";
-                    document.getElementById('aiStatus').innerText = "Escuchando...";
-                } catch(e) {
-                    document.getElementById('aiStatus').innerText = "Error: Permiso de micrófono denegado.";
-                    aiMic.classList.remove('listening');
-                    aiMic.innerText = "🎤";
-                }
+                window.speechSynthesis.cancel(); isAISpeaking = false;
+                if (aiMic.classList.contains('listening')) { aiRecognition.stop(); return; }
+                try { aiRecognition.start(); aiMic.classList.add('listening'); aiMic.innerText = "⏹️"; document.getElementById('aiStatus').innerText = "Escuchando..."; } 
+                catch(e) { document.getElementById('aiStatus').innerText = "Error: Permiso de micrófono."; aiMic.classList.remove('listening'); aiMic.innerText = "🎤"; }
             });
-
             aiRecognition.onresult = async (e) => {
                 const transcript = e.results[0][0].transcript;
                 document.getElementById('aiContent').innerHTML += `<div class="user-message">Tú: ${transcript}</div>`;
                 document.getElementById('aiStatus').innerText = "Pensando...";
-                
                 try {
                     const r = await fetch(`https://text.pollinations.ai/${encodeURIComponent(transcript + ". Responde de forma breve.")}`);
                     const txt = await r.text();
-                    
                     document.getElementById('aiContent').innerHTML += `<div class="ai-message">IA: ${txt}</div>`;
                     document.getElementById('aiStatus').innerText = "Hablando...";
-
                     isAISpeaking = true;
-                    let utterance = new SpeechSynthesisUtterance(txt);
-                    utterance.lang = 'es-ES';
-                    utterance.onend = () => {
-                        isAISpeaking = false;
-                        aiMic.classList.remove('listening');
-                        aiMic.innerText = "🎤";
-                        document.getElementById('aiStatus').innerText = "Toca el micro para hablar";
-                    };
+                    let utterance = new SpeechSynthesisUtterance(txt); utterance.lang = 'es-ES';
+                    utterance.onend = () => { isAISpeaking = false; aiMic.classList.remove('listening'); aiMic.innerText = "🎤"; document.getElementById('aiStatus').innerText = "Toca el micro para hablar"; };
                     window.speechSynthesis.speak(utterance);
-
-                } catch(err) {
-                    document.getElementById('aiStatus').innerText = "Error de conexión.";
-                    aiMic.classList.remove('listening');
-                    aiMic.innerText = "🎤";
-                }
+                } catch(err) { document.getElementById('aiStatus').innerText = "Error de conexión."; aiMic.classList.remove('listening'); aiMic.innerText = "🎤"; }
             };
-
-            aiRecognition.onerror = (e) => {
-                document.getElementById('aiStatus').innerText = "Error de micrófono.";
-                aiMic.classList.remove('listening');
-                aiMic.innerText = "🎤";
-                isAISpeaking = false;
-            };
-
-            aiRecognition.onend = () => {
-                if (!isAISpeaking) {
-                    aiMic.classList.remove('listening');
-                    aiMic.innerText = "🎤";
-                    if (document.getElementById('aiStatus').innerText === "Hablando...") return;
-                    document.getElementById('aiStatus').innerText = "Toca el micro para hablar";
-                }
-            };
-        } else {
-            alert("Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.");
-        }
+            aiRecognition.onerror = (e) => { document.getElementById('aiStatus').innerText = "Error de micrófono."; aiMic.classList.remove('listening'); aiMic.innerText = "🎤"; isAISpeaking = false; };
+            aiRecognition.onend = () => { if (!isAISpeaking) { aiMic.classList.remove('listening'); aiMic.innerText = "🎤"; if (document.getElementById('aiStatus').innerText === "Hablando...") return; document.getElementById('aiStatus').innerText = "Toca el micro para hablar"; } };
+        } else { alert("Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge."); }
 
         function startVoiceCommands() {
             if(!SR) return;
